@@ -11,6 +11,8 @@
 종료: q 키 또는 ESC
 """
 
+import re
+import subprocess
 import sys
 import cv2
 import numpy as np
@@ -21,6 +23,26 @@ from gesture import GestureDetector
 from effects import EffectManager
 from subtitle import SubtitleManager
 from sound_manager import SoundManager
+
+
+def find_builtin_camera_index() -> int:
+    """AVFoundation 디바이스 목록에서 내장 FaceTime 카메라 인덱스를 반환."""
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-f", "avfoundation", "-list_devices", "true", "-i", ""],
+            capture_output=True, text=True, timeout=5,
+        )
+        for line in result.stderr.splitlines():
+            # 예: [AVFoundation indev @ 0x...] [0] FaceTime HD Camera
+            match = re.search(r'\[(\d+)\]\s+FaceTime', line, re.IGNORECASE)
+            if match:
+                idx = int(match.group(1))
+                print(f"[정보] 내장 FaceTime 카메라 인덱스: {idx}")
+                return idx
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    print("[경고] ffmpeg으로 카메라 목록을 확인할 수 없어 index 0 사용")
+    return 0
 
 
 def build_ui_overlay(frame: np.ndarray) -> np.ndarray:
@@ -48,8 +70,9 @@ def build_ui_overlay(frame: np.ndarray) -> np.ndarray:
 
 def main():
     # ── 웹캠 초기화 ───────────────────────────────────────────
-    # macOS AVFoundation 백엔드로 내장 카메라 사용
-    cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+    # macOS AVFoundation 백엔드로 내장 FaceTime 카메라 사용 (아이폰 Continuity Camera 제외)
+    cam_idx = find_builtin_camera_index()
+    cap = cv2.VideoCapture(cam_idx, cv2.CAP_AVFOUNDATION)
     if not cap.isOpened():
         print("[오류] 웹캠을 열 수 없습니다. 카메라 연결을 확인해 주세요.")
         sys.exit(1)
